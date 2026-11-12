@@ -3,7 +3,6 @@ import { MikroORM } from '@mikro-orm/postgresql';
 import { Global, Inject, Injectable, Module, type OnApplicationShutdown } from '@nestjs/common';
 import { ENV, type Env } from '../../config/env';
 import { CLOCK, type Clock } from '../../shared/application/ports';
-import { CONSUMER_METRICS, NoopConsumerMetrics } from './application/consumer-metrics';
 import {
   EVENT_PUBLISHER,
   type EventPublisher,
@@ -11,6 +10,7 @@ import {
   OutboxRelay,
   type OutboxStore,
 } from './application/outbox-relay';
+import { MessagingGauges } from './infra/messaging-gauges';
 import { OUTBOX_RELAY, OutboxPublisherWorker } from './infra/outbox-publisher.worker';
 import { MikroOrmOutboxStore } from './infra/persistence/mikro-orm-outbox-store';
 import { SqsEventPublisher } from './infra/sqs/sqs-event-publisher';
@@ -34,7 +34,6 @@ class SqsLifecycle implements OnApplicationShutdown {
       inject: [SQS_CLIENT],
       useFactory: (sqs: SQSClient) => new QueueUrls(sqs),
     },
-    { provide: CONSUMER_METRICS, useClass: NoopConsumerMetrics },
     {
       provide: OUTBOX_STORE,
       inject: [MikroORM],
@@ -56,8 +55,9 @@ class SqsLifecycle implements OnApplicationShutdown {
         }),
     },
     OutboxPublisherWorker,
+    MessagingGauges,
     SqsLifecycle,
   ],
-  exports: [SQS_CLIENT, QUEUE_URLS, CONSUMER_METRICS, OUTBOX_STORE],
+  exports: [SQS_CLIENT, QUEUE_URLS, OUTBOX_STORE],
 })
 export class MessagingModule {}

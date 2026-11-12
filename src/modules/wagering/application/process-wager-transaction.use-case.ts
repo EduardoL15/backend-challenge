@@ -19,6 +19,9 @@ import {
   UNIT_OF_WORK,
   type UnitOfWork,
 } from '../../../shared/application/unit-of-work';
+import { type AppMetrics, METRICS, type WagerSource } from '../../../shared/application/metrics';
+import { addContext } from '../../../observability/context';
+import { inSpan, setSpanAttributes } from '../../../observability/tracing';
 import { WagerTransaction } from '../domain/wager-transaction';
 import { WagerApplier } from './wager-applier';
 import {
@@ -58,6 +61,7 @@ export class ProcessWagerTransactionUseCase {
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
     @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(METRICS) private readonly metrics: AppMetrics,
     private readonly applier: WagerApplier,
   ) {}
 
@@ -83,7 +87,26 @@ export class ProcessWagerTransactionUseCase {
     return this.run(command, ctx, receipt);
   }
 
-  private async run(
+  private run(
+    command: WagerCommand,
+    ctx: ExecutionContext,
+    receipt: InboxReceipt | undefined,
+  ): Promise<MessageExecution> {
+    const source: WagerSource = receipt ? 'sqs' : 'http';
+    addContext({ walletId: command.walletId, providerId: command.providerId });
+    return inSpan(
+      'wager.process',
+      { 'wagering.kind': command.kind, 'wagering.source': source },
+      async () => {
+        const started = performance.now();
+        const execution = await this.runWithRaceRetry(command, ctx, receipt);
+        this.report(execution, command.kind, source, performance.now() - started);
+        return execution;
+      },
+    );
+  }
+
+  private async runWithRaceRetry(
     command: WagerCommand,
     ctx: ExecutionContext,
     receipt: InboxReceipt | undefined,
@@ -105,10 +128,39 @@ export class ProcessWagerTransactionUseCase {
           error instanceof UniqueViolationError &&
           error.constraint !== undefined &&
           RACE_CONSTRAINTS.has(error.constraint);
-        if (isRace && attempt < MAX_RACE_RETRIES) continue;
+        if (isRace && attempt < MAX_RACE_RETRIES) {
+          this.metrics.lockConflict('unique_race');
+          continue;
+        }
         throw error;
       }
     }
+  }
+
+  private report(
+    execution: MessageExecution,
+    kind: string,
+    source: WagerSource,
+    durationMs: number,
+  ): void {
+    if (execution.kind === 'duplicate_message') {
+      this.metrics.duplicateDetected('inbox', source);
+      return;
+    }
+    const { result } = execution;
+    addContext({ transactionId: result.transactionId });
+    setSpanAttributes({
+      'wagering.status': result.status,
+      'wagering.replay': result.idempotentReplay,
+    });
+    if (result.idempotentReplay) this.metrics.duplicateDetected('idempotency_key', source);
+    this.metrics.wagerHandled({
+      source,
+      kind,
+      status: result.status,
+      replay: result.idempotentReplay,
+      durationMs,
+    });
   }
 
   /** Returns false when (consumer, messageId) was already processed and committed. */

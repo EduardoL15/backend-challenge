@@ -1,4 +1,5 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { addContext } from '../../../observability/context';
 import { OutboxMessage } from '../../messaging/domain/outbox-message';
 import { WalletBalanceChanged } from '../../wallet/domain/events/wallet-balance-changed';
 import type { Wallet } from '../../wallet/domain/wallet';
@@ -33,6 +34,8 @@ export const WAGERING_SETTINGS = Symbol('WageringSettings');
  */
 @Injectable()
 export class WagerApplier {
+  private readonly logger = new Logger('WagerApplier');
+
   constructor(
     @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -69,6 +72,18 @@ export class WagerApplier {
       maxReferenceAttempts: this.settings.maxReferenceAttempts,
       scheduleReferenceRetry: (attempt, at) =>
         nextAttemptAt(at, attempt, this.settings.referenceBackoff),
+    });
+
+    addContext({ transactionId: transaction.id, walletId: wallet.id });
+    // Decision log: identifiers and outcome only (amounts/balances stay out of the logs).
+    this.logger.log({
+      msg: 'Wager transaction applied',
+      kind: transaction.kind,
+      status: transaction.status,
+      ...(transaction.failureCode !== undefined ? { failureCode: transaction.failureCode } : {}),
+      ...(outcome.type === 'pending_reference'
+        ? { referenceAttempts: transaction.referenceAttempts }
+        : {}),
     });
 
     if (persistence === 'insert') repos.wagers.add(transaction);

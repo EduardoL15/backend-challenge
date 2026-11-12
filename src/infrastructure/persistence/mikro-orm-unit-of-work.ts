@@ -32,7 +32,8 @@ import type {
   WagerTransactionRepository,
   WalletRepository,
 } from '../../shared/application/unit-of-work';
-import { translateDbError } from './db-errors';
+import { type AppMetrics, NoopMetrics } from '../../shared/application/metrics';
+import { lockFailureKind, translateDbError } from './db-errors';
 
 export interface UnitOfWorkOptions {
   /** How long to wait for a wallet row lock before failing with a transient error. */
@@ -48,6 +49,7 @@ export class MikroOrmUnitOfWork implements UnitOfWork {
   constructor(
     private readonly orm: MikroORM,
     private readonly options: UnitOfWorkOptions,
+    private readonly metrics: AppMetrics = new NoopMetrics(),
   ) {}
 
   async run<T>(work: (repos: TransactionalRepositories) => Promise<T>): Promise<T> {
@@ -60,6 +62,8 @@ export class MikroOrmUnitOfWork implements UnitOfWork {
         return work(repositoriesFor(em));
       });
     } catch (error) {
+      const lockFailure = lockFailureKind(error);
+      if (lockFailure) this.metrics.lockConflict(lockFailure);
       throw translateDbError(error);
     }
   }

@@ -23,8 +23,8 @@ export interface OutboxStore {
     handle: (messages: OutboxMessage[]) => Promise<PublishFailures>,
   ): Promise<number>;
 
-  /** Age of the oldest unpublished message (outbox lag), undefined when empty. */
-  oldestPendingAgeMs(now: Date): Promise<number | undefined>;
+  /** Unpublished messages and the age of the oldest one (outbox lag; 0 when empty). */
+  pendingStats(now: Date): Promise<{ count: number; oldestAgeMs: number }>;
 }
 export const OUTBOX_STORE = Symbol('OutboxStore');
 

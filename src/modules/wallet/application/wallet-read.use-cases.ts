@@ -1,3 +1,4 @@
+import { type AppMetrics, METRICS } from '../../../shared/application/metrics';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ErrorCodes, NotFoundError, ValidationError } from '../../../shared/application/errors';
 import type { MoneyProps } from '../../../shared/domain/money';
@@ -13,12 +14,6 @@ export interface ReconciliationReport {
   checkedEntries: number;
 }
 
-/** Hook for the divergence metric (wired to Prometheus in the observability phase). */
-export interface ReconciliationMetrics {
-  recordReconciliation(consistent: boolean): void;
-}
-export const RECONCILIATION_METRICS = Symbol('ReconciliationMetrics');
-
 export const LEDGER_PAGE_DEFAULT_LIMIT = 50;
 export const LEDGER_PAGE_MAX_LIMIT = 200;
 
@@ -28,7 +23,7 @@ export class WalletReadUseCases {
 
   constructor(
     @Inject(WALLET_QUERIES) private readonly queries: WalletQueries,
-    @Inject(RECONCILIATION_METRICS) private readonly metrics: ReconciliationMetrics,
+    @Inject(METRICS) private readonly metrics: AppMetrics,
   ) {}
 
   async getWallet(walletId: string): Promise<Wallet> {
@@ -63,7 +58,7 @@ export class WalletReadUseCases {
     const { storedBalance, calculatedBalance, checkedEntries } = snapshot;
     const difference = storedBalance.subtract(calculatedBalance);
     const consistent = difference.isZero();
-    this.metrics.recordReconciliation(consistent);
+    this.metrics.reconciliation(consistent);
     if (!consistent) {
       this.logger.error({
         msg: 'Wallet balance diverges from ledger',

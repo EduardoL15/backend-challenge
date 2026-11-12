@@ -1,4 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { withContext } from '../../../observability/context';
+import { inSpan } from '../../../observability/tracing';
+import { type AppMetrics, METRICS } from '../../../shared/application/metrics';
 import { CLOCK, type Clock } from '../../../shared/application/ports';
 import { UNIT_OF_WORK, type UnitOfWork } from '../../../shared/application/unit-of-work';
 import { WagerTransactionStatus } from '../domain/wager-transaction-kind';
@@ -16,10 +19,25 @@ export class ResolvePendingReferenceUseCase {
   constructor(
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(METRICS) private readonly metrics: AppMetrics,
     private readonly applier: WagerApplier,
   ) {}
 
-  async resolve(transactionId: string): Promise<PendingResolution> {
+  resolve(transactionId: string): Promise<PendingResolution> {
+    return withContext({ transactionId, correlationId: transactionId }, () =>
+      inSpan(
+        'pending_reference.resolve',
+        { 'wagering.transaction_id': transactionId },
+        async () => {
+          const result = await this.resolveInTransaction(transactionId);
+          this.metrics.pendingResolution(result);
+          return result;
+        },
+      ),
+    );
+  }
+
+  private resolveInTransaction(transactionId: string): Promise<PendingResolution> {
     return this.uow.run(async (repos) => {
       const candidate = await repos.wagers.findById(transactionId);
       if (candidate?.status !== WagerTransactionStatus.PendingReference) return 'skipped';

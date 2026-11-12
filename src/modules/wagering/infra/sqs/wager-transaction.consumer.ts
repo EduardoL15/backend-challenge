@@ -25,10 +25,12 @@ import type { ExecutionContext } from '../../../../shared/application/ports';
 import { DomainError } from '../../../../shared/domain/errors';
 import { FailureCode } from '../../../../shared/domain/failure-code';
 import {
-  CONSUMER_METRICS,
-  type ConsumerMetrics,
+  type AppMetrics,
   type ConsumerOutcome,
-} from '../../../messaging/application/consumer-metrics';
+  METRICS,
+} from '../../../../shared/application/metrics';
+import { addContext, withContext } from '../../../../observability/context';
+import { inSpan, setSpanAttributes } from '../../../../observability/tracing';
 import { QUEUE_URLS, type QueueUrls, SQS_CLIENT } from '../../../messaging/infra/sqs/sqs';
 import { ProcessWagerTransactionUseCase } from '../../application/process-wager-transaction.use-case';
 import { WagerTransactionStatus } from '../../domain/wager-transaction-kind';
@@ -77,7 +79,7 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
     @Inject(ENV) private readonly env: Env,
     @Inject(SQS_CLIENT) private readonly sqs: SQSClient,
     @Inject(QUEUE_URLS) private readonly queues: QueueUrls,
-    @Inject(CONSUMER_METRICS) private readonly metrics: ConsumerMetrics,
+    @Inject(METRICS) private readonly metrics: AppMetrics,
     private readonly processWager: ProcessWagerTransactionUseCase,
   ) {}
 
@@ -172,15 +174,31 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
     );
   }
 
-  private async handle(queueUrl: string, message: Message): Promise<void> {
+  /** One diagnostic context + one consumer span per message: every log line inside carries ids. */
+  private handle(queueUrl: string, message: Message): Promise<void> {
+    return withContext({ sqsMessageId: message.MessageId }, () =>
+      inSpan(
+        'sqs.process wager-transactions',
+        { 'messaging.system': 'aws_sqs', 'messaging.message.id': message.MessageId ?? '' },
+        () => this.handleInContext(queueUrl, message),
+      ),
+    );
+  }
+
+  private async handleInContext(queueUrl: string, message: Message): Promise<void> {
     const started = performance.now();
     const receiveCount = Number(message.Attributes?.ApproximateReceiveCount ?? '1');
-    const log = { sqsMessageId: message.MessageId, receiveCount };
     let outcome: ConsumerOutcome;
 
     try {
       const parsed = parseWagerMessage(message.Body);
       const ctx = this.contextFor(message, parsed.messageId);
+      addContext({
+        messageId: parsed.messageId,
+        correlationId: ctx.correlationId,
+        walletId: parsed.data.walletId,
+        providerId: parsed.data.providerId,
+      });
       const execution = await this.processWager.executeFromMessage(parsed.data, ctx, {
         consumerName: this.env.SQS_CONSUMER_NAME,
         messageId: parsed.messageId,
@@ -189,22 +207,12 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
       // ACK only now: the SQL transaction (inbox + effects + outbox) is committed.
       await this.ack(queueUrl, message);
       outcome = outcomeOf(execution);
-      this.logger.log({
-        msg: 'Message handled',
-        ...log,
-        messageId: parsed.messageId,
-        walletId: parsed.data.walletId,
-        providerId: parsed.data.providerId,
-        correlationId: ctx.correlationId,
-        outcome,
-        ...(execution.kind === 'processed'
-          ? { transactionId: execution.result.transactionId }
-          : {}),
-      });
+      this.logger.log({ msg: 'Message handled', receiveCount, outcome });
     } catch (error) {
       outcome = await this.onFailure(queueUrl, message, receiveCount, error);
     }
-    this.metrics.messageHandled(outcome, performance.now() - started);
+    setSpanAttributes({ 'wagering.outcome': outcome });
+    this.metrics.consumerMessage(outcome, performance.now() - started);
   }
 
   private async onFailure(
@@ -228,6 +236,9 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
       case 'permanent':
         this.logger.error({ msg: 'Poison message, sending to DLQ', ...detail });
         await this.deadLetter(queueUrl, message, error);
+        this.metrics.deadLettered(
+          error instanceof PermanentMessageError ? error.reason : errorCode(error),
+        );
         return 'dead_letter';
       case 'transient': {
         const delaySeconds = Math.min(
@@ -243,6 +254,9 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
           retryInSeconds: delaySeconds,
         });
         await this.changeVisibility(queueUrl, message, delaySeconds);
+        this.metrics.consumerRetry();
+        // The queue itself moves it on the next receive; count it here, where we know why.
+        if (exhausted) this.metrics.deadLettered('max_receive_count');
         return 'retry';
       }
     }

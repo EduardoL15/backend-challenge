@@ -50,6 +50,13 @@ const envSchema = z.object({
   PENDING_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(1_000),
   PENDING_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(50),
 
+  /** OTLP/HTTP collector base URL (e.g. http://jaeger:4318). Tracing is off when unset. */
+  // Empty string (e.g. an unset `${VAR:-}` in Compose) means "disabled".
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.url().optional(),
+  ),
+
   /** Max time to finish in-flight work on SIGTERM before giving messages back. */
   SHUTDOWN_GRACE_MS: z.coerce.number().int().positive().default(25_000),
 });

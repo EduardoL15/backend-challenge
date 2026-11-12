@@ -69,6 +69,10 @@ services:
       AWS_ENDPOINT_URL: http://localstack:4566
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Tracing is off unless set, e.g.:
+      #   OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318 docker compose --profile app --profile observability up -d
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     healthcheck:
       test:
         [
@@ -100,6 +104,16 @@ services:
       - ./infra/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       app: { condition: service_healthy }
+
+  # Optional trace backend (OTLP/HTTP on 4318, UI on http://localhost:16686).
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    profiles: ['observability']
+    environment:
+      COLLECTOR_OTLP_ENABLED: 'true'
+    ports:
+      - '16686:16686'
+      - '4318:4318'
 
 volumes:
   pgdata:

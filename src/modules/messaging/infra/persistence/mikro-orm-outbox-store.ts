@@ -47,13 +47,17 @@ export class MikroOrmOutboxStore implements OutboxStore {
     }
   }
 
-  async oldestPendingAgeMs(now: Date): Promise<number | undefined> {
-    const rows = await this.orm.em
-      .fork()
-      .execute<{ oldest: Date | null }[]>(
-        'SELECT min(occurred_at) AS oldest FROM outbox_messages WHERE published_at IS NULL',
-      );
-    const oldest = rows[0]?.oldest;
-    return oldest ? Math.max(0, now.getTime() - new Date(oldest).getTime()) : undefined;
+  async pendingStats(now: Date): Promise<{ count: number; oldestAgeMs: number }> {
+    // Served by the partial index outbox_pending_due_idx (WHERE published_at IS NULL).
+    const rows = await this.orm.em.fork().execute<{ pending: number; oldest: Date | null }[]>(
+      `SELECT count(*)::int AS pending, min(occurred_at) AS oldest
+           FROM outbox_messages WHERE published_at IS NULL`,
+    );
+    const row = rows[0];
+    const oldest = row?.oldest;
+    return {
+      count: row?.pending ?? 0,
+      oldestAgeMs: oldest ? Math.max(0, now.getTime() - new Date(oldest).getTime()) : 0,
+    };
   }
 }

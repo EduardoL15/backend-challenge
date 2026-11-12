@@ -14,14 +14,11 @@ import {
 } from '../modules/wagering/application/wager-applier';
 import { WAGER_QUERIES } from '../modules/wagering/application/wager-queries';
 import { MikroOrmWagerQueries } from '../modules/wagering/infra/persistence/mikro-orm-wager-queries';
-import {
-  RECONCILIATION_METRICS,
-  type ReconciliationMetrics,
-} from '../modules/wallet/application/wallet-read.use-cases';
 import { WALLET_QUERIES } from '../modules/wallet/application/wallet-queries';
 import { MikroOrmWalletQueries } from '../modules/wallet/infra/persistence/mikro-orm-wallet-queries';
 import { CLOCK, type Clock, ID_GENERATOR, type IdGenerator } from '../shared/application/ports';
 import { UNIT_OF_WORK } from '../shared/application/unit-of-work';
+import { type AppMetrics, METRICS } from '../shared/application/metrics';
 import { createOrmConfig } from './persistence/mikro-orm.config';
 import { MikroOrmUnitOfWork } from './persistence/mikro-orm-unit-of-work';
 
@@ -34,13 +31,6 @@ export class SystemClock implements Clock {
 export class UuidV7Generator implements IdGenerator {
   next(): string {
     return Bun.randomUUIDv7();
-  }
-}
-
-/** Placeholder until the Prometheus metrics are wired (observability phase). */
-export class NoopReconciliationMetrics implements ReconciliationMetrics {
-  recordReconciliation(): void {
-    // replaced by the Prometheus implementation
   }
 }
 
@@ -69,9 +59,9 @@ class OrmLifecycle implements OnApplicationShutdown {
     { provide: ID_GENERATOR, useClass: UuidV7Generator },
     {
       provide: UNIT_OF_WORK,
-      inject: [MikroORM, ENV],
-      useFactory: (orm: MikroORM, env: Env) =>
-        new MikroOrmUnitOfWork(orm, { lockTimeoutMs: env.DB_LOCK_TIMEOUT_MS }),
+      inject: [MikroORM, ENV, METRICS],
+      useFactory: (orm: MikroORM, env: Env, metrics: AppMetrics) =>
+        new MikroOrmUnitOfWork(orm, { lockTimeoutMs: env.DB_LOCK_TIMEOUT_MS }, metrics),
     },
     {
       provide: WAGERING_SETTINGS,
@@ -94,7 +84,6 @@ class OrmLifecycle implements OnApplicationShutdown {
       inject: [MikroORM],
       useFactory: (orm: MikroORM) => new MikroOrmWagerQueries(orm),
     },
-    { provide: RECONCILIATION_METRICS, useClass: NoopReconciliationMetrics },
   ],
   exports: [
     MikroORM,
@@ -104,7 +93,6 @@ class OrmLifecycle implements OnApplicationShutdown {
     WAGERING_SETTINGS,
     WALLET_QUERIES,
     WAGER_QUERIES,
-    RECONCILIATION_METRICS,
   ],
 })
 export class InfrastructureModule {}

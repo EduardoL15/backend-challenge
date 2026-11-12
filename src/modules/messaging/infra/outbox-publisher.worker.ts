@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { ENV, type Env } from '../../../config/env';
 import { PollingLoop } from '../../../infrastructure/workers/polling-loop';
+import { inSpan } from '../../../observability/tracing';
+import { type AppMetrics, METRICS } from '../../../shared/application/metrics';
 import { OutboxRelay } from '../application/outbox-relay';
 
 export const OUTBOX_RELAY = Symbol('OutboxRelay');
@@ -20,12 +22,15 @@ export class OutboxPublisherWorker implements OnApplicationBootstrap, BeforeAppl
   constructor(
     @Inject(ENV) private readonly env: Env,
     @Inject(OUTBOX_RELAY) private readonly relay: OutboxRelay,
+    @Inject(METRICS) private readonly metrics: AppMetrics,
   ) {
     this.loop = new PollingLoop({
       name: 'OutboxPublisher',
       idleIntervalMs: env.OUTBOX_POLL_INTERVAL_MS,
       iterate: async () => {
-        const { handled, failed } = await this.relay.relayOnce();
+        const { handled, failed } = await inSpan('outbox.relay', {}, () => this.relay.relayOnce());
+        this.metrics.outboxPublished(handled - failed);
+        this.metrics.outboxPublishFailed(failed);
         if (failed > 0) this.logger.warn({ msg: 'Some events failed to publish', failed, handled });
         // A full batch means there is probably more waiting; failures wait for their backoff.
         return handled >= env.OUTBOX_BATCH_SIZE && failed === 0;
