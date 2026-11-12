@@ -51,6 +51,16 @@ export class UniqueViolationError extends ApplicationError {
   }
 }
 
+/** Same (consumer, messageId) seen before with a different body: never auto-retried. */
+export class InboxPayloadMismatchError extends ApplicationError {
+  constructor(messageId: string) {
+    super(
+      'INBOX_PAYLOAD_MISMATCH',
+      `Message ${messageId} was already received with another payload`,
+    );
+  }
+}
+
 export const ErrorCodes = {
   WalletNotFound: 'WALLET_NOT_FOUND',
   WalletAlreadyExists: 'WALLET_ALREADY_EXISTS',

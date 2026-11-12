@@ -19,6 +19,7 @@
     "migration:status": "bun src/infrastructure/persistence/migrate.ts status"
   },
   "dependencies": {
+    "@aws-sdk/client-sqs": "^3.1167.0",
     "@mikro-orm/core": "^7.2.8",
     "@mikro-orm/migrations": "^7.2.8",
     "@mikro-orm/postgresql": "^7.2.8",

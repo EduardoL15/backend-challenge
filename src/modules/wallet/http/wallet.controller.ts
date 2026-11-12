@@ -13,11 +13,7 @@ import {
 } from '../application/wallet-read.use-cases';
 import type { Wallet } from '../domain/wallet';
 import type { WalletLedgerEntry } from '../domain/wallet-ledger-entry';
-
-export const moneySchema = z.strictObject({
-  amount: z.string({ error: 'amount must be a decimal string, e.g. "25.00"' }),
-  currency: z.string(),
-});
+import { moneySchema } from '../../wagering/application/wager-contract';
 
 const createWalletSchema = z.strictObject({
   playerId: z.uuid(),

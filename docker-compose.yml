@@ -3,6 +3,7 @@ name: wagering
 services:
   postgres:
     image: postgres:17-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: wagering
       POSTGRES_PASSWORD: wagering
@@ -22,8 +23,11 @@ services:
   localstack:
     # Pinned: newer LocalStack releases may require an auth token (see CLAUDE.md learnings).
     image: localstack/localstack:4.4
+    restart: unless-stopped
     environment:
       SERVICES: sqs
+      # Queue URLs as http://<host>:4566/<account>/<queue> (resolvable from other containers)
+      SQS_ENDPOINT_STRATEGY: path
       AWS_DEFAULT_REGION: us-east-1
     ports:
       - '4566:4566'
@@ -53,10 +57,13 @@ services:
   app:
     image: wagering-app
     profiles: ['app']
+    # Docker sends SIGKILL after this: must exceed SHUTDOWN_GRACE_MS (default would be 10s).
+    stop_grace_period: 30s
     environment:
       NODE_ENV: production
       PORT: 3000
       APP_ROLES: api,consumer,outbox,pending
+      SHUTDOWN_GRACE_MS: 20000
       DATABASE_URL: postgres://wagering:wagering@postgres:5432/wagering
       AWS_REGION: us-east-1
       AWS_ENDPOINT_URL: http://localstack:4566

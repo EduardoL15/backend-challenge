@@ -33,6 +33,17 @@ const envSchema = z.object({
   SQS_WAGER_QUEUE_NAME: z.string().default('wager-transactions.fifo'),
   SQS_WAGER_DLQ_NAME: z.string().default('wager-transactions-dlq.fifo'),
   SQS_EVENTS_QUEUE_NAME: z.string().default('wagering-events.fifo'),
+  /** Inbox key namespace: (consumerName, messageId). */
+  SQS_CONSUMER_NAME: z.string().min(1).default('wager-transactions-consumer'),
+  SQS_WAIT_TIME_SECONDS: z.coerce.number().int().min(0).max(20).default(20),
+  SQS_MAX_MESSAGES: z.coerce.number().int().min(1).max(10).default(10),
+  /** Must match the queue RedrivePolicy.maxReceiveCount (used for logs/metrics/backoff). */
+  SQS_MAX_RECEIVE_COUNT: z.coerce.number().int().min(1).default(5),
+  SQS_RETRY_BASE_SECONDS: z.coerce.number().int().min(0).default(2),
+  SQS_RETRY_MAX_SECONDS: z.coerce.number().int().min(0).max(43_200).default(60),
+
+  /** Max time to finish in-flight work on SIGTERM before giving messages back. */
+  SHUTDOWN_GRACE_MS: z.coerce.number().int().positive().default(25_000),
 });
 
 export type Env = z.infer<typeof envSchema>;

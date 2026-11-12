@@ -170,9 +170,15 @@ class MikroOrmInboxRepository implements InboxRepository {
     // ON CONFLICT DO NOTHING: a concurrent consumer holding the same message makes us wait
     // for its COMMIT/ROLLBACK, then we see the row (duplicate) or insert it ourselves.
     const result = await this.em.execute<{ affectedRows: number }>(
-      `INSERT INTO inbox_messages (consumer_name, message_id, payload_hash, received_at)
-       VALUES (?, ?, ?, ?) ON CONFLICT (consumer_name, message_id) DO NOTHING`,
-      [message.consumerName, message.messageId, message.payloadHash, message.receivedAt],
+      `INSERT INTO inbox_messages (consumer_name, message_id, payload_hash, received_at, processed_at)
+       VALUES (?, ?, ?, ?, ?) ON CONFLICT (consumer_name, message_id) DO NOTHING`,
+      [
+        message.consumerName,
+        message.messageId,
+        message.payloadHash,
+        message.receivedAt,
+        message.processedAt ?? null,
+      ],
       'run',
     );
     return result.affectedRows === 1;

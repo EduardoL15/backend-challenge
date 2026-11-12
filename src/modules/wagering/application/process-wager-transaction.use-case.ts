@@ -1,9 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { OutboxMessage } from '../../messaging/domain/outbox-message';
 import { WalletBalanceChanged } from '../../wallet/domain/events/wallet-balance-changed';
+import { InboxMessage } from '../../messaging/domain/inbox-message';
 import {
   ConflictError,
   ErrorCodes,
+  InboxPayloadMismatchError,
   NotFoundError,
   UniqueViolationError,
 } from '../../../shared/application/errors';
@@ -36,6 +38,16 @@ import {
 } from './wager-command';
 import { type WagerResult, toWagerResult } from './wager-result';
 
+export interface InboxReceipt {
+  consumerName: string;
+  messageId: string;
+  /** Hash of the whole message: the same messageId with another body is a poison message. */
+  payloadHash: string;
+}
+
+export type MessageExecution =
+  { kind: 'processed'; result: WagerResult } | { kind: 'duplicate_message' };
+
 export interface WageringSettings {
   maxReferenceAttempts: number;
   referenceBackoff: BackoffOptions;
@@ -65,14 +77,45 @@ export class ProcessWagerTransactionUseCase {
     @Inject(WAGERING_SETTINGS) private readonly settings: WageringSettings,
   ) {}
 
+  /** HTTP entry point. */
   async execute(command: WagerCommand, ctx: ExecutionContext): Promise<WagerResult> {
+    const execution = await this.run(command, ctx, undefined);
+    if (execution.kind !== 'processed') {
+      throw new Error('Unreachable: duplicate message without an inbox receipt');
+    }
+    return execution.result;
+  }
+
+  /**
+   * Queue entry point: SAME flow, plus the inbox row (consumer, messageId) written in the
+   * SAME SQL transaction as the financial effects. If the row already exists, the message was
+   * fully processed and committed before (redelivery): nothing is done again.
+   */
+  async executeFromMessage(
+    command: WagerCommand,
+    ctx: ExecutionContext,
+    receipt: InboxReceipt,
+  ): Promise<MessageExecution> {
+    return this.run(command, ctx, receipt);
+  }
+
+  private async run(
+    command: WagerCommand,
+    ctx: ExecutionContext,
+    receipt: InboxReceipt | undefined,
+  ): Promise<MessageExecution> {
     const normalized = normalizeWagerCommand(command);
     // Validate the contract before any I/O (OPENING, missing reference, amount rules...).
     this.buildTransaction(normalized);
 
     for (let attempt = 0; ; attempt++) {
       try {
-        return await this.uow.run((repos) => this.process(repos, normalized, ctx));
+        return await this.uow.run(async (repos): Promise<MessageExecution> => {
+          if (receipt && !(await this.receive(repos, receipt))) {
+            return { kind: 'duplicate_message' };
+          }
+          return { kind: 'processed', result: await this.process(repos, normalized, ctx) };
+        });
       } catch (error) {
         const isRace =
           error instanceof UniqueViolationError &&
@@ -82,6 +125,20 @@ export class ProcessWagerTransactionUseCase {
         throw error;
       }
     }
+  }
+
+  /** Returns false when (consumer, messageId) was already processed and committed. */
+  private async receive(repos: TransactionalRepositories, receipt: InboxReceipt): Promise<boolean> {
+    const now = this.clock.now();
+    const message = InboxMessage.receive({ ...receipt, at: now });
+    message.markProcessed(now); // committed together with the effects, or rolled back with them
+    if (await repos.inbox.tryReceive(message)) return true;
+
+    const existing = await repos.inbox.find(receipt.consumerName, receipt.messageId);
+    if (existing && existing.payloadHash !== receipt.payloadHash) {
+      throw new InboxPayloadMismatchError(receipt.messageId);
+    }
+    return false;
   }
 
   private async process(

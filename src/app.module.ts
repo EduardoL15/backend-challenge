@@ -6,6 +6,7 @@ import { HttpExceptionFilter } from './http/http-exception.filter';
 import { CorrelationMiddleware } from './http/request-context';
 import { InfrastructureModule } from './infrastructure/infrastructure.module';
 import { AuthModule } from './modules/auth/auth';
+import { MessagingModule } from './modules/messaging/messaging.module';
 import { WageringModule } from './modules/wagering/wagering.module';
 import { WalletModule } from './modules/wallet/wallet.module';
 
@@ -13,6 +14,7 @@ import { WalletModule } from './modules/wallet/wallet.module';
   imports: [
     ConfigModule,
     InfrastructureModule,
+    MessagingModule,
     AuthModule,
     HealthModule,
     WalletModule,

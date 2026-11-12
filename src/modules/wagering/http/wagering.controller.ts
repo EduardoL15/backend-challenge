@@ -7,33 +7,16 @@ import type { ExecutionContext } from '../../../shared/application/ports';
 import type { FailureCode } from '../../../shared/domain/failure-code';
 import type { MoneyProps } from '../../../shared/domain/money';
 import { PROVIDER_IDENTITY, type ProviderIdentityPort } from '../../auth/auth';
-import { moneySchema } from '../../wallet/http/wallet.controller';
 import { ProcessWagerTransactionUseCase } from '../application/process-wager-transaction.use-case';
+import {
+  boundedText as text,
+  idempotencyKeySchema,
+  wagerPayloadSchema,
+} from '../application/wager-contract';
 import { WagerReadUseCases } from '../application/wager-queries';
 import type { WagerResult } from '../application/wager-result';
 import type { WagerTransaction } from '../domain/wager-transaction';
 import { WagerTransactionStatus } from '../domain/wager-transaction-kind';
-
-const text = (max: number) => z.string().trim().min(1).max(max);
-
-/** Contract shared by HTTP and the SQS consumer. */
-export const wagerPayloadSchema = z.strictObject({
-  providerId: text(100),
-  externalTransactionId: text(200),
-  playerId: z.uuid(),
-  walletId: z.uuid(),
-  roundId: text(200),
-  gameId: text(200),
-  kind: z.string().min(1).max(20),
-  money: moneySchema,
-  referenceExternalTransactionId: text(200).optional(),
-});
-
-const idempotencyKeySchema = z
-  .string({ error: 'Idempotency-Key header is required' })
-  .trim()
-  .min(1, 'Idempotency-Key header is required')
-  .max(255);
 
 /**
  * Status mapping (consistent across endpoints):
