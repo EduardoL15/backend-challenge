@@ -18,7 +18,18 @@ export interface LedgerRepository {
 }
 
 export interface WagerTransactionRepository {
+  findById(id: string): Promise<WagerTransaction | undefined>;
   findByIdempotencyKey(key: string): Promise<WagerTransaction | undefined>;
+  /**
+   * Makes PENDING_REFERENCE transactions of this wallet that wait for
+   * (providerId, externalTransactionId) due right now.
+   */
+  wakePendingReferencing(
+    walletId: string,
+    providerId: string,
+    externalTransactionId: string,
+    at: Date,
+  ): Promise<void>;
   findByProviderAndExternalId(
     providerId: string,
     externalTransactionId: string,

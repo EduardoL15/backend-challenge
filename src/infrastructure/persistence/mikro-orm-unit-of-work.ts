@@ -114,6 +114,30 @@ class MikroOrmLedgerRepository implements LedgerRepository {
 class MikroOrmWagerTransactionRepository implements WagerTransactionRepository {
   constructor(private readonly em: EntityManager) {}
 
+  async findById(id: string): Promise<WagerTransaction | undefined> {
+    const record = await this.em.findOne(WagerTransactionRecord, { id }, { refresh: true });
+    return record ? WagerTransactionMapper.toDomain(record) : undefined;
+  }
+
+  async wakePendingReferencing(
+    walletId: string,
+    providerId: string,
+    externalTransactionId: string,
+    at: Date,
+  ): Promise<void> {
+    await this.em.execute(
+      `UPDATE wager_transactions
+          SET next_reference_attempt_at = ?, updated_at = ?
+        WHERE status = 'PENDING_REFERENCE'
+          AND wallet_id = ?
+          AND provider_id = ?
+          AND reference_external_transaction_id = ?
+          AND next_reference_attempt_at > ?`,
+      [at, at, walletId, providerId, externalTransactionId, at],
+      'run',
+    );
+  }
+
   async findByIdempotencyKey(key: string): Promise<WagerTransaction | undefined> {
     // refresh: always read the committed row, even if an earlier lookup cached a miss/hit.
     const record = await this.em.findOne(

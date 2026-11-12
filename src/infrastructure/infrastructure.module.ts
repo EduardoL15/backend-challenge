@@ -11,7 +11,7 @@ import { ENV, type Env } from '../config/env';
 import {
   WAGERING_SETTINGS,
   type WageringSettings,
-} from '../modules/wagering/application/process-wager-transaction.use-case';
+} from '../modules/wagering/application/wager-applier';
 import { WAGER_QUERIES } from '../modules/wagering/application/wager-queries';
 import { MikroOrmWagerQueries } from '../modules/wagering/infra/persistence/mikro-orm-wager-queries';
 import {

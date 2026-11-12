@@ -4,6 +4,8 @@ import type { WagerTransaction } from '../domain/wager-transaction';
 
 export interface WagerQueries {
   findById(transactionId: string): Promise<WagerTransaction | undefined>;
+  /** PENDING_REFERENCE transactions whose next attempt is due, oldest first. */
+  findDuePendingReferenceIds(now: Date, limit: number): Promise<string[]>;
   findByProviderAndExternalId(
     providerId: string,
     externalTransactionId: string,

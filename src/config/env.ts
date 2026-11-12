@@ -42,6 +42,14 @@ const envSchema = z.object({
   SQS_RETRY_BASE_SECONDS: z.coerce.number().int().min(0).default(2),
   SQS_RETRY_MAX_SECONDS: z.coerce.number().int().min(0).max(43_200).default(60),
 
+  OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(500),
+  OUTBOX_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(50),
+  OUTBOX_RETRY_BASE_MS: z.coerce.number().int().positive().default(1_000),
+  OUTBOX_RETRY_MAX_MS: z.coerce.number().int().positive().default(60_000),
+
+  PENDING_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(1_000),
+  PENDING_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(50),
+
   /** Max time to finish in-flight work on SIGTERM before giving messages back. */
   SHUTDOWN_GRACE_MS: z.coerce.number().int().positive().default(25_000),
 });

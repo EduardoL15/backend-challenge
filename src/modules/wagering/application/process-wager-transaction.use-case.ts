@@ -1,6 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { OutboxMessage } from '../../messaging/domain/outbox-message';
-import { WalletBalanceChanged } from '../../wallet/domain/events/wallet-balance-changed';
 import { InboxMessage } from '../../messaging/domain/inbox-message';
 import {
   ConflictError,
@@ -9,7 +7,6 @@ import {
   NotFoundError,
   UniqueViolationError,
 } from '../../../shared/application/errors';
-import { eventContextFactory } from '../../../shared/application/event-context';
 import {
   CLOCK,
   type Clock,
@@ -22,15 +19,8 @@ import {
   UNIT_OF_WORK,
   type UnitOfWork,
 } from '../../../shared/application/unit-of-work';
-import { type BackoffOptions, nextAttemptAt } from '../../../shared/domain/backoff';
-import type { EventContext, IntegrationEvent } from '../../../shared/domain/integration-event';
-import {
-  WagerTransactionPendingReference,
-  WagerTransactionProcessed,
-  WagerTransactionRejected,
-} from '../domain/events/wagering-events';
 import { WagerTransaction } from '../domain/wager-transaction';
-import { type WagerOutcome, applyWagerTransaction } from '../domain/wagering-policy';
+import { WagerApplier } from './wager-applier';
 import {
   type NormalizedWagerCommand,
   type WagerCommand,
@@ -47,12 +37,6 @@ export interface InboxReceipt {
 
 export type MessageExecution =
   { kind: 'processed'; result: WagerResult } | { kind: 'duplicate_message' };
-
-export interface WageringSettings {
-  maxReferenceAttempts: number;
-  referenceBackoff: BackoffOptions;
-}
-export const WAGERING_SETTINGS = Symbol('WageringSettings');
 
 /** Unique constraints that mean "someone else just inserted the same request": retry -> replay. */
 const RACE_CONSTRAINTS = new Set(['wager_tx_idempotency_key_uq', 'wager_tx_provider_external_uq']);
@@ -74,7 +58,7 @@ export class ProcessWagerTransactionUseCase {
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
     @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
     @Inject(CLOCK) private readonly clock: Clock,
-    @Inject(WAGERING_SETTINGS) private readonly settings: WageringSettings,
+    private readonly applier: WagerApplier,
   ) {}
 
   /** HTTP entry point. */
@@ -169,41 +153,7 @@ export class ProcessWagerTransactionUseCase {
     }
 
     const transaction = this.buildTransaction(command);
-    const reference =
-      command.referenceExternalTransactionId !== undefined
-        ? await repos.wagers.findByProviderAndExternalId(
-            command.providerId,
-            command.referenceExternalTransactionId,
-          )
-        : undefined;
-    const referenceAlreadyReversed =
-      reference !== undefined && transaction.isReversal()
-        ? await repos.wagers.hasProcessedReversal(reference.id)
-        : false;
-
-    const outcome = applyWagerTransaction({
-      transaction,
-      wallet,
-      reference,
-      referenceAlreadyReversed,
-      entryId: this.ids.next(),
-      at: this.clock.now(),
-      maxReferenceAttempts: this.settings.maxReferenceAttempts,
-      scheduleReferenceRetry: (attempt, now) =>
-        nextAttemptAt(now, attempt, this.settings.referenceBackoff),
-    });
-
-    repos.wagers.add(transaction);
-    if (outcome.type === 'processed' && outcome.entry) {
-      repos.ledger.append(outcome.entry);
-      await repos.wallets.save(wallet);
-    }
-
-    const newEventContext = eventContextFactory(this.ids, this.clock, ctx);
-    for (const event of eventsFor(outcome, transaction, newEventContext, wallet)) {
-      repos.outbox.add(OutboxMessage.enqueue(event));
-    }
-
+    await this.applier.apply(repos, transaction, wallet, ctx, 'insert');
     return toWagerResult(transaction, false);
   }
 
@@ -234,23 +184,4 @@ function replayOrConflict(known: WagerTransaction, command: NormalizedWagerComma
     );
   }
   return toWagerResult(known, true);
-}
-
-function eventsFor(
-  outcome: WagerOutcome,
-  transaction: WagerTransaction,
-  newContext: () => EventContext,
-  wallet: Parameters<typeof WalletBalanceChanged.from>[0],
-): IntegrationEvent<unknown>[] {
-  switch (outcome.type) {
-    case 'processed':
-      return [
-        WagerTransactionProcessed.from(transaction, newContext()),
-        ...(outcome.entry ? [WalletBalanceChanged.from(wallet, outcome.entry, newContext())] : []),
-      ];
-    case 'rejected':
-      return [WagerTransactionRejected.from(transaction, newContext())];
-    case 'pending_reference':
-      return [WagerTransactionPendingReference.from(transaction, newContext())];
-  }
 }
