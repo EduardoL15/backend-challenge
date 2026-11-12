@@ -8,7 +8,8 @@ services:
       POSTGRES_PASSWORD: wagering
       POSTGRES_DB: wagering
     ports:
-      - '5432:5432'
+      # 5433 on the host: a native PostgreSQL may already own 5432 on Windows
+      - '5433:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -38,8 +39,19 @@ services:
       timeout: 5s
       retries: 40
 
-  app:
+  # One-shot: applies pending migrations before any app replica starts.
+  migrate:
     build: .
+    image: wagering-app
+    profiles: ['app']
+    command: ['bun', 'src/infrastructure/persistence/migrate.ts', 'up']
+    environment:
+      DATABASE_URL: postgres://wagering:wagering@postgres:5432/wagering
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  app:
+    image: wagering-app
     profiles: ['app']
     environment:
       NODE_ENV: production
@@ -50,12 +62,25 @@ services:
       AWS_ENDPOINT_URL: http://localstack:4566
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'bun',
+          '-e',
+          "fetch('http://localhost:3000/health/live').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
     deploy:
       replicas: 3
       resources:
         limits:
           memory: 256m
     depends_on:
+      migrate: { condition: service_completed_successfully }
       postgres: { condition: service_healthy }
       localstack: { condition: service_healthy }
 
@@ -67,7 +92,7 @@ services:
     volumes:
       - ./infra/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - app
+      app: { condition: service_healthy }
 
 volumes:
   pgdata:

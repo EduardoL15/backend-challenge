@@ -20,4 +20,8 @@ async function bootstrap(): Promise<void> {
   logger.log(`Roles enabled: ${env.APP_ROLES.join(', ')}`);
 }
 
-void bootstrap();
+bootstrap().catch((error: unknown) => {
+  // Fail fast and loudly (invalid env, unreachable dependency...): the orchestrator restarts us.
+  new Logger('Bootstrap').error(error instanceof Error ? error.stack : String(error));
+  process.exit(1);
+});

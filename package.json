@@ -13,9 +13,16 @@
     "test": "bun test test/unit",
     "test:integration": "bun test test/integration",
     "test:concurrency": "bun test test/concurrency",
-    "test:load": "bun load-test/run.ts"
+    "test:load": "bun load-test/run.ts",
+    "migration:up": "bun src/infrastructure/persistence/migrate.ts up",
+    "migration:down": "bun src/infrastructure/persistence/migrate.ts down",
+    "migration:status": "bun src/infrastructure/persistence/migrate.ts status"
   },
   "dependencies": {
+    "@mikro-orm/core": "^7.2.8",
+    "@mikro-orm/migrations": "^7.2.8",
+    "@mikro-orm/nestjs": "^7.1.0",
+    "@mikro-orm/postgresql": "^7.2.8",
     "@nestjs/common": "^12.4.2",
     "@nestjs/core": "^12.4.2",
     "@nestjs/platform-express": "^12.4.2",
