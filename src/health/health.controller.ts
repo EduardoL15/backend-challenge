@@ -1,5 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
+import { Public } from '../modules/auth/auth';
 
+@Public()
 @Controller('health')
 export class HealthController {
   /** Liveness: the process is up and the event loop responds. No dependencies checked. */

@@ -98,3 +98,15 @@ describe('Money currency conflicts', () => {
     expect(op).toThrow(CurrencyMismatchError);
   });
 });
+
+describe('Money.fromSignedDecimal (internal: reconciliation)', () => {
+  it('accepts negative sums that input contracts would reject', () => {
+    expect(Money.fromSignedDecimal('-10.50', 'BRL').amount).toBe('-10.50');
+    expect(Money.fromSignedDecimal('10.50', 'BRL').amount).toBe('10.50');
+  });
+
+  it('still rejects malformed values', () => {
+    expect(() => Money.fromSignedDecimal('--1.00', 'BRL')).toThrow(InvalidMoneyError);
+    expect(() => Money.fromSignedDecimal('1e3', 'BRL')).toThrow(InvalidMoneyError);
+  });
+});

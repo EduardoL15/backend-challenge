@@ -39,6 +39,16 @@ export class Money {
     return new Money(minor, currency);
   }
 
+  /**
+   * Internal use only (reconciliation, persistence): accepts a signed decimal, e.g. a ledger sum
+   * that may be negative when the data is corrupted. Never use it for input contracts.
+   */
+  static fromSignedDecimal(amount: string, currency: string): Money {
+    const negative = amount.startsWith('-');
+    const magnitude = Money.from({ amount: negative ? amount.slice(1) : amount, currency });
+    return negative ? magnitude.negate() : magnitude;
+  }
+
   static zero(currency: string): Money {
     return new Money(0n, Money.parseCurrency(currency));
   }

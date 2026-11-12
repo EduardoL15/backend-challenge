@@ -19,6 +19,14 @@ const envSchema = z.object({
     .pipe(z.array(z.enum(APP_ROLES)).min(1)),
 
   DATABASE_URL: z.url(),
+  DB_POOL_MAX: z.coerce.number().int().positive().default(10),
+  /** Max wait for a wallet row lock before answering 503 (retry is safe). */
+  DB_LOCK_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+
+  /** PENDING_REFERENCE retries: 8 attempts, 1s -> 128s exponential with jitter (~4-5 min). */
+  PENDING_REFERENCE_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(8),
+  PENDING_REFERENCE_BASE_MS: z.coerce.number().int().positive().default(1_000),
+  PENDING_REFERENCE_MAX_MS: z.coerce.number().int().positive().default(128_000),
 
   AWS_REGION: z.string().default('us-east-1'),
   AWS_ENDPOINT_URL: z.url().optional(),
