@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build / coverage
+dist/
+coverage/
+*.tsbuildinfo
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Load test reports (raw)
+load-test/results/*.json
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local AI assistant context (not versioned)
+CLAUDE.md
+.claude/
