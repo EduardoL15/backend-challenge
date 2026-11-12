@@ -24,7 +24,3 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
-
-# Local AI assistant context (not versioned)
-CLAUDE.md
-.claude/

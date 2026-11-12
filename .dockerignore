@@ -1,0 +1,9 @@
+node_modules
+.git
+.env
+coverage
+dist
+test
+load-test
+CLAUDE.md
+.claude
