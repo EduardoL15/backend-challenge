@@ -205,6 +205,7 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
         payloadHash: messageHash(parsed),
       });
       // ACK only now: the SQL transaction (inbox + effects + outbox) is committed.
+      this.crashIfFaultInjected(parsed.messageId);
       await this.ack(queueUrl, message);
       outcome = outcomeOf(execution);
       this.logger.log({ msg: 'Message handled', receiveCount, outcome });
@@ -260,6 +261,16 @@ export class WagerTransactionConsumer implements OnApplicationBootstrap, BeforeA
         return 'retry';
       }
     }
+  }
+
+  /**
+   * Chaos test hook (env-validated: never enabled in production). Simulates the worst moment
+   * for a consumer to die: effects COMMITTED, message NOT acknowledged.
+   */
+  private crashIfFaultInjected(messageId: string): void {
+    if (this.env.FAULT_CRASH_AFTER_COMMIT_MESSAGE_ID !== messageId) return;
+    this.logger.error({ msg: 'FAULT INJECTION: killing process after commit, before ack' });
+    process.kill(process.pid, 'SIGKILL');
   }
 
   private contextFor(message: Message, messageId: string): ExecutionContext {
