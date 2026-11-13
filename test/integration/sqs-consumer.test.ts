@@ -15,6 +15,7 @@ import {
   createTestQueues,
   drain,
   queueDepth,
+  receiveAtLeastOne,
   sendRaw,
   testSqsClient,
   type TestQueues,
@@ -209,7 +210,7 @@ describe('SQS consumer', () => {
     async (_label, body, reason) => {
       await sendRaw(sqs, queues.mainUrl, body, `poison-${uuid()}`);
       await waitFor(queueEmpty, { what: 'removal from main queue' });
-      const parked = await drain(sqs, queues.dlqUrl);
+      const parked = await receiveAtLeastOne(sqs, queues.dlqUrl);
       expect(parked).toHaveLength(1);
       expect(parked[0]?.Body).toBe(body);
       expect(parked[0]?.MessageAttributes?.dlqReason?.StringValue).toBe(reason);
@@ -222,7 +223,7 @@ describe('SQS consumer', () => {
     const envelope = wagerEnvelope({ walletId: w.id, playerId: w.playerId, amount: '1.005' });
     await send(envelope, w.id);
     await waitFor(queueEmpty, { what: 'removal' });
-    const parked = await drain(sqs, queues.dlqUrl);
+    const parked = await receiveAtLeastOne(sqs, queues.dlqUrl);
     expect(parked[0]?.MessageAttributes?.dlqReason?.StringValue).toBe('INVALID_AMOUNT');
     expect(await balance(w.id)).toBe('100.00');
   }, 30_000);
@@ -294,7 +295,7 @@ describe('SQS consumer', () => {
     };
     await send(tampered, w.id);
     await waitFor(queueEmpty, { what: 'removal' });
-    const parked = await drain(sqs, queues.dlqUrl);
+    const parked = await receiveAtLeastOne(sqs, queues.dlqUrl);
     expect(parked[0]?.MessageAttributes?.dlqReason?.StringValue).toBe('INBOX_PAYLOAD_MISMATCH');
     expect(await balance(w.id)).toBe('90.00');
   }, 30_000);

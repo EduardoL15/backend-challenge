@@ -146,6 +146,23 @@ export async function drain(sqs: SQSClient, queueUrl: string): Promise<Message[]
   return res.Messages ?? [];
 }
 
+/**
+ * Reads until at least one message shows up (bounded). A single receive is racy: under CPU
+ * pressure LocalStack may make a just-sent DLQ message visible a moment later.
+ */
+export async function receiveAtLeastOne(
+  sqs: SQSClient,
+  queueUrl: string,
+  timeoutMs = 15_000,
+): Promise<Message[]> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const messages = await drain(sqs, queueUrl);
+    if (messages.length > 0) return messages;
+  }
+  return [];
+}
+
 export async function waitFor(
   predicate: () => Promise<boolean>,
   { timeoutMs = 20_000, intervalMs = 200, what = 'condition' } = {},

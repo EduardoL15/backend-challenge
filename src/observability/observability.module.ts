@@ -1,4 +1,6 @@
+import { hostname } from 'node:os';
 import { Controller, Get, Global, Module, Res } from '@nestjs/common';
+import { ENV, type Env } from '../config/env';
 import type { Response } from 'express';
 import { Public } from '../modules/auth/auth';
 import { METRICS } from '../shared/application/metrics';
@@ -21,7 +23,14 @@ export class MetricsController {
 @Module({
   controllers: [MetricsController],
   providers: [
-    { provide: PrometheusMetrics, useFactory: () => new PrometheusMetrics() },
+    {
+      provide: PrometheusMetrics,
+      inject: [ENV],
+      useFactory: (env: Env) =>
+        new PrometheusMetrics(
+          env.METRICS_INSTANCE_LABEL ? { instance: process.env.HOSTNAME ?? hostname() } : {},
+        ),
+    },
     { provide: METRICS, useExisting: PrometheusMetrics },
   ],
   exports: [PrometheusMetrics, METRICS],

@@ -58,6 +58,12 @@ const envSchema = z
       z.url().optional(),
     ),
 
+    /** Add an `instance` label to every metric (only when no Prometheus scraper adds it). */
+    METRICS_INSTANCE_LABEL: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
+
     /** Max time to finish in-flight work on SIGTERM before giving messages back. */
     SHUTDOWN_GRACE_MS: z.coerce.number().int().positive().default(25_000),
 

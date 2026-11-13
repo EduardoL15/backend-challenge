@@ -102,7 +102,15 @@ export class PrometheusMetrics implements AppMetrics {
     registers: [this.registry],
   });
 
-  constructor(options: { defaultMetrics?: boolean } = {}) {
+  /**
+   * `instance`: normally the Prometheus SCRAPER adds it. When there is no Prometheus (local
+   * Compose behind a load balancer) it is set here, so ad-hoc scrapes through the LB can tell
+   * the replicas apart.
+   */
+  constructor(options: { defaultMetrics?: boolean; instance?: string } = {}) {
+    if (options.instance !== undefined) {
+      this.registry.setDefaultLabels({ instance: options.instance });
+    }
     if (options.defaultMetrics !== false) {
       collectDefaultMetrics({ register: this.registry, prefix: 'wagering_process_' });
     }

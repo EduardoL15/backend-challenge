@@ -70,6 +70,8 @@ services:
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # No Prometheus scraper here: label series by replica so scrapes through the LB add up.
+      METRICS_INSTANCE_LABEL: 'true'
       # Tracing is off unless set, e.g.:
       #   OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318 docker compose --profile app --profile observability up -d
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
